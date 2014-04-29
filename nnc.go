@@ -70,15 +70,42 @@ func (g *Game) Play(x, y int, player byte) (done bool, winner byte, err error) {
 		return true, winner, nil
 	}
 
-	// Update whose turn it is
+	g.updateTurn()
+
+	return false, Empty, nil
+}
+
+// PlayAI function checks if is the given player's turn, if so, it makes a move
+// as that player.
+//
+// Return true and winner (Empty means draw) if the move ended the game.
+func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
+	// Validation check
+	if g.currPlayer != player {
+		return false, Empty, errors.New("not player's turn")
+	}
+
+	// TODO: AI code here
+
+	g.updateTurn()
+
+	return false, Empty, nil
+}
+
+// updateTurn function updates whose turn it is.
+//
+// Assumes the turn was correctly set before call.
+func (g *Game) updateTurn() error {
 	switch g.currPlayer {
 	case Cross:
 		g.currPlayer = Nought
 	case Nought:
 		g.currPlayer = Cross
+	default:
+		return errors.New("invalid player turn value")
 	}
 
-	return false, Empty, nil
+	return nil
 }
 
 // isDone function determines if the game is over, and if it is, its winner.
@@ -90,12 +117,12 @@ func (g Game) isDone() (done bool, winner byte) {
 	// TODO: Check for winner
 
 	// Check for draw
-OuterFor:
+outerFor:
 	for i := range g.board {
 		for _, p := range g.board[i] {
 			if p == Empty {
 				done = false
-				break OuterFor
+				break outerFor
 			}
 		}
 	}
