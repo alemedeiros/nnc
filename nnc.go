@@ -29,6 +29,18 @@ type Game struct {
 	currPlayer byte
 }
 
+// Board method returns a copy of the current state of the board.
+func (g Game) Board() (board [][]byte) {
+	board = make([][]byte, g.size)
+
+	for i := range board {
+		board[i] = make([]byte, g.size)
+		copy(board[i], g.board[i])
+	}
+
+	return
+}
+
 // New function Initializes a game structure with a sz-sized board.
 // First player is always Cross.
 func New(sz int) (g Game) {
