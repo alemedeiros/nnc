@@ -29,6 +29,11 @@ type Game struct {
 	currPlayer byte
 }
 
+// CurrentPlayer method returns the player that should play.
+func (g Game) CurrentPlayer() byte {
+	return g.currPlayer
+}
+
 // Board method returns a copy of the current state of the board.
 func (g Game) Board() (board [][]byte) {
 	board = make([][]byte, g.size)
@@ -73,18 +78,19 @@ func (g *Game) Play(x, y int, player byte) (done bool, winner byte, err error) {
 	if x < 0 || g.size <= x || y < 0 || g.size <= y {
 		return false, Empty, errors.New("invalid position")
 	}
+	if g.board[x][y] != Empty {
+		return false, Empty, errors.New("cell already played")
+	}
 
 	// Move is valid, do it!
 	g.board[x][y] = player
 
 	// Check if move ended the game
-	if isDone, winner := g.isDone(); isDone {
-		return true, winner, nil
-	}
+	isDone, winner := g.isDone()
 
 	g.updateTurn()
 
-	return false, Empty, nil
+	return isDone, winner, nil
 }
 
 // PlayAI method checks if is the given player's turn, if so, it makes a move as
