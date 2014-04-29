@@ -17,9 +17,9 @@ import "errors"
 // Cross is a 'X';
 // Nought is a 'O';
 const (
-	Empty  byte = iota // 0
-	Cross  byte = iota // X
-	Nought byte = iota // O
+	Empty  byte = ' '
+	Cross  byte = 'X'
+	Nought byte = 'O'
 )
 
 // A Game is a game board, use New function to initialize a Game.
