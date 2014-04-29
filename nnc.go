@@ -131,8 +131,83 @@ func (g *Game) updateTurn() error {
 func (g Game) isDone() (done bool, winner byte) {
 	winner = Empty
 	done = true
+	var local bool
+	var init byte
 
-	// TODO: Check for winner
+	// Check for winner
+	for i, sz := 0, g.size; i < sz; i++ {
+		// Lines
+		local = true
+		init = Empty
+		for j := 0; j < sz && local; j++ {
+			if j == 0 {
+				init = g.board[i][j]
+			}
+
+			if g.board[i][j] == Empty || g.board[i][j] != init {
+				local = false
+			}
+		}
+
+		// Return if someone won
+		if local {
+			return local, init
+		}
+
+		// Columns
+		local = true
+		init = Empty
+		for j := 0; j < sz && local; j++ {
+			if j == 0 {
+				init = g.board[j][i]
+			}
+
+			if g.board[j][i] == Empty || g.board[j][i] != init {
+				local = false
+			}
+		}
+
+		// Return if someone won
+		if local {
+			return local, init
+		}
+	}
+
+	// Diagonal
+	local = true
+	init = Empty
+	for i, sz := 0, g.size; i < sz && local; i++ {
+		if i == 0 {
+			init = g.board[i][i]
+		}
+
+		if g.board[i][i] == Empty || g.board[i][i] != init {
+			local = false
+		}
+	}
+
+	// Return if someone won
+	if local {
+		return local, init
+	}
+
+	// Anti-diagonal
+	local = true
+	init = Empty
+	for i, sz := 0, g.size; i < sz && local; i++ {
+		if i == 0 {
+			init = g.board[i][sz-1-i]
+		}
+
+		if g.board[i][sz-1-i] == Empty || g.board[i][sz-1-i] != init {
+			local = false
+		}
+	}
+
+	// Return if someone won
+	if local {
+		return local, init
+	}
 
 	// Check for draw
 outerFor:
