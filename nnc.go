@@ -61,7 +61,7 @@ func New(sz int) (g Game) {
 	return
 }
 
-// Play function checks if the coordinates are inside the board and if it is the
+// Play method checks if the coordinates are inside the board and if it is the
 // given player's turn.
 //
 // Return true and winner (Empty means draw) if the move ended the game.
@@ -87,8 +87,8 @@ func (g *Game) Play(x, y int, player byte) (done bool, winner byte, err error) {
 	return false, Empty, nil
 }
 
-// PlayAI function checks if is the given player's turn, if so, it makes a move
-// as that player.
+// PlayAI method checks if is the given player's turn, if so, it makes a move as
+// that player.
 //
 // Return true and winner (Empty means draw) if the move ended the game.
 func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
@@ -104,7 +104,7 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 	return false, Empty, nil
 }
 
-// updateTurn function updates whose turn it is.
+// updateTurn method updates whose turn it is.
 //
 // Assumes the turn was correctly set before call.
 func (g *Game) updateTurn() error {
@@ -120,7 +120,7 @@ func (g *Game) updateTurn() error {
 	return nil
 }
 
-// isDone function determines if the game is over, and if it is, its winner.
+// isDone method determines if the game is over, and if it is, its winner.
 // If winner is Empty, the it was a draw.
 func (g Game) isDone() (done bool, winner byte) {
 	winner = Empty
