@@ -46,6 +46,22 @@ func (g Game) Board() (board [][]byte) {
 	return
 }
 
+func min(a, ia, ja, b, ib, jb int) (v, i, j int) {
+	if a <= b {
+		return a, ia, ja
+	} else {
+		return b, ib, jb
+	}
+}
+
+func max(a, ia, ja, b, ib, jb int) (v, i, j int) {
+	if a >= b {
+		return a, ia, ja
+	} else {
+		return b, ib, jb
+	}
+}
+
 // New function Initializes a game structure with a sz-sized board.
 // First player is always Cross.
 func New(sz int) (g Game) {
@@ -79,6 +95,7 @@ func (g *Game) Play(x, y int, player byte) (done bool, winner byte, err error) {
 		return false, Empty, errors.New("invalid position")
 	}
 	if g.board[x][y] != Empty {
+		print("error position: ", x, " ", y, "\n")
 		return false, Empty, errors.New("cell already played")
 	}
 
@@ -103,11 +120,93 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 		return false, Empty, errors.New("not player's turn")
 	}
 
-	// TODO: AI code here
+	lim := g.size * g.size * 3
 
-	g.updateTurn()
+	// Try to generate all the fucking tree!
+	_, i, j := alphaBetaPruning(*g, g.size, -lim, lim, player)
 
-	return false, Empty, nil
+	return g.Play(i, j, player)
+}
+
+func (g Game) copyGame() (ng Game) {
+	// Allocate a new Game structure
+	ng = Game{
+		board:      make([][]byte, g.size),
+		size:       g.size,
+		currPlayer: g.currPlayer,
+	}
+
+	for i := range ng.board {
+		ng.board[i] = make([]byte, g.size)
+		for j := range ng.board[i] {
+			ng.board[i][j] = g.board[i][j]
+		}
+	}
+
+	return
+}
+
+// Serial implementation of Alpha-Beta Pruning algorithm.
+// TODO: Try not to copy the entire game structure
+func alphaBetaPruning(g Game, depth int, alpha, beta int, player byte) (v, x, y int) {
+	// Check for depth limit
+	if r, _ := g.isDone(); depth == 0 || r {
+		return g.Outcome(player), -1, -1
+	}
+
+	// Check for whose turn it is
+	if curr := g.currPlayer; curr == player {
+		for i, l := range g.board {
+			for j, e := range l {
+				var val int
+				// Check for possible move
+				if e != Empty {
+					continue
+				}
+
+				// Generate updated game
+				ng := g.copyGame()
+				ng.Play(i, j, player)
+
+				// Game is over
+				val, _, _ = alphaBetaPruning(ng, depth-1, alpha, beta, player)
+
+				alpha, x, y = max(alpha, x, y, val, i, j)
+
+				// beta cut-off
+				if beta <= alpha {
+					return alpha, i, j
+				}
+			}
+		}
+		return alpha, x, y
+	} else {
+		for i, l := range g.board {
+			for j, e := range l {
+				var val int
+
+				// Check for possible move
+				if e != Empty {
+					continue
+				}
+
+				// Generate updated game
+				ng := g.copyGame()
+				ng.Play(i, j, curr)
+
+				// Game is over
+				val, _, _ = alphaBetaPruning(ng, depth-1, alpha, beta, player)
+
+				beta, x, y = min(beta, x, y, val, i, j)
+
+				// alpha cut-off
+				if beta <= alpha {
+					return beta, i, j
+				}
+			}
+		}
+		return beta, x, y
+	}
 }
 
 // updateTurn method updates whose turn it is.
@@ -223,6 +322,7 @@ outerFor:
 	return
 }
 
+// TODO: Outcome should not be exported (is being used for debug purposes)
 // Outcome calculates the outcome function for a player (Nought/Cross) for the
 // current game.
 func (g Game) Outcome(player byte) (sum int) {
@@ -282,6 +382,13 @@ func (g Game) Outcome(player byte) (sum int) {
 				csum -= 1 // Decrement for opponent
 			}
 		}
+
+		if lsum == sz || csum == sz {
+			return 3 * sz * sz
+		} else if lsum == -sz || csum == -sz {
+			return -(3 * sz * sz)
+		}
+
 		sum += lsum + csum
 	}
 
@@ -311,6 +418,13 @@ func (g Game) Outcome(player byte) (sum int) {
 			dsum -= 1 // Decrement for opponent
 		}
 	}
+
+	if dsum == g.size {
+		return 3 * g.size * g.size
+	} else if dsum == -g.size {
+		return -(3 * g.size * g.size)
+	}
+
 	sum += dsum
 
 	// Anti-Diagonal
@@ -338,6 +452,13 @@ func (g Game) Outcome(player byte) (sum int) {
 			adsum -= 1 // Decrement for opponent
 		}
 	}
+
+	if adsum == g.size {
+		return 3 * g.size * g.size
+	} else if adsum == -g.size {
+		return -(3 * g.size * g.size)
+	}
+
 	sum += adsum
 
 	return

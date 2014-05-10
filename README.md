@@ -4,4 +4,6 @@ A n-sized noughts and crosses game library.
 
 ##TODO
 
-* Implement AI
+* Implement AI using goroutines for better performance
+* Remove Outcome method from exported symbols
+* Improve comments on internal functions
