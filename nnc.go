@@ -46,6 +46,7 @@ func (g Game) Board() (board [][]byte) {
 	return
 }
 
+// Get the minimum weighted playing position.
 func min(a, ia, ja, b, ib, jb int) (v, i, j int) {
 	if a <= b {
 		return a, ia, ja
@@ -54,6 +55,7 @@ func min(a, ia, ja, b, ib, jb int) (v, i, j int) {
 	}
 }
 
+// Get the maximum weighted playing position.
 func max(a, ia, ja, b, ib, jb int) (v, i, j int) {
 	if a >= b {
 		return a, ia, ja
@@ -72,10 +74,31 @@ func New(sz int) (g Game) {
 		currPlayer: Cross, // First player is Cross
 	}
 
+	// Initialize board.
 	for i := range g.board {
 		g.board[i] = make([]byte, sz)
 		for j := range g.board[i] {
 			g.board[i][j] = Empty
+		}
+	}
+
+	return
+}
+
+// Return a copy of the current game.
+func (g Game) copyGame() (ng Game) {
+	// Allocate a new Game structure
+	ng = Game{
+		board:      make([][]byte, g.size),
+		size:       g.size,
+		currPlayer: g.currPlayer,
+	}
+
+	// Copy board.
+	for i := range ng.board {
+		ng.board[i] = make([]byte, g.size)
+		for j := range ng.board[i] {
+			ng.board[i][j] = g.board[i][j]
 		}
 	}
 
@@ -128,37 +151,18 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 	return g.Play(i, j, player)
 }
 
-func (g Game) copyGame() (ng Game) {
-	// Allocate a new Game structure
-	ng = Game{
-		board:      make([][]byte, g.size),
-		size:       g.size,
-		currPlayer: g.currPlayer,
-	}
-
-	for i := range ng.board {
-		ng.board[i] = make([]byte, g.size)
-		for j := range ng.board[i] {
-			ng.board[i][j] = g.board[i][j]
-		}
-	}
-
-	return
-}
-
 // Serial implementation of Alpha-Beta Pruning algorithm.
 // TODO: Try not to copy the entire game structure
 func alphaBetaPruning(g Game, depth int, alpha, beta int, player byte) (v, x, y int) {
 	// Check for depth limit
-	if r, _ := g.isDone(); depth == 0 || r {
-		return g.Outcome(player), -1, -1
+	if done, _ := g.isDone(); depth == 0 || done {
+		return g.outcome(player), -1, -1
 	}
 
 	// Check for whose turn it is
 	if curr := g.currPlayer; curr == player {
 		for i, l := range g.board {
 			for j, e := range l {
-				var val int
 				// Check for possible move
 				if e != Empty {
 					continue
@@ -169,7 +173,7 @@ func alphaBetaPruning(g Game, depth int, alpha, beta int, player byte) (v, x, y 
 				ng.Play(i, j, player)
 
 				// Game is over
-				val, _, _ = alphaBetaPruning(ng, depth-1, alpha, beta, player)
+				val, _, _ := alphaBetaPruning(ng, depth-1, alpha, beta, player)
 
 				alpha, x, y = max(alpha, x, y, val, i, j)
 
@@ -183,8 +187,6 @@ func alphaBetaPruning(g Game, depth int, alpha, beta int, player byte) (v, x, y 
 	} else {
 		for i, l := range g.board {
 			for j, e := range l {
-				var val int
-
 				// Check for possible move
 				if e != Empty {
 					continue
@@ -195,7 +197,7 @@ func alphaBetaPruning(g Game, depth int, alpha, beta int, player byte) (v, x, y 
 				ng.Play(i, j, curr)
 
 				// Game is over
-				val, _, _ = alphaBetaPruning(ng, depth-1, alpha, beta, player)
+				val, _, _ := alphaBetaPruning(ng, depth-1, alpha, beta, player)
 
 				beta, x, y = min(beta, x, y, val, i, j)
 
@@ -322,10 +324,9 @@ outerFor:
 	return
 }
 
-// TODO: Outcome should not be exported (is being used for debug purposes)
 // Outcome calculates the outcome function for a player (Nought/Cross) for the
 // current game.
-func (g Game) Outcome(player byte) (sum int) {
+func (g Game) outcome(player byte) (sum int) {
 	if player != Nought && player != Cross {
 		return
 	}
