@@ -259,6 +259,17 @@ func (g *Game) updateTurn() error {
 	return nil
 }
 
+func opponent(player byte) byte {
+	switch player {
+	case Cross:
+		return Nought
+	case Nought:
+		return Cross
+	default:
+		return 0
+	}
+}
+
 // isDone method determines if the game is over, and if it is, its winner.
 // If winner is Empty, the it was a draw.
 func (g Game) isDone() (done bool, winner byte) {
