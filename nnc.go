@@ -26,7 +26,13 @@ const (
 type Game struct {
 	board      [][]byte
 	size       int
+	count      int
 	currPlayer byte
+}
+
+// Structure to save the move and its value.
+type move struct {
+	value, i, j int
 }
 
 // CurrentPlayer method returns the player that should play.
@@ -47,20 +53,20 @@ func (g Game) Board() (board [][]byte) {
 }
 
 // Get the minimum weighted playing position.
-func min(a, ia, ja, b, ib, jb int) (v, i, j int) {
-	if a <= b {
-		return a, ia, ja
+func min(a, b move) move {
+	if a.value <= b.value {
+		return a
 	} else {
-		return b, ib, jb
+		return b
 	}
 }
 
 // Get the maximum weighted playing position.
-func max(a, ia, ja, b, ib, jb int) (v, i, j int) {
-	if a >= b {
-		return a, ia, ja
+func max(a, b move) move {
+	if a.value >= b.value {
+		return a
 	} else {
-		return b, ib, jb
+		return b
 	}
 }
 
@@ -71,6 +77,7 @@ func New(sz int) (g Game) {
 	g = Game{
 		board:      make([][]byte, sz),
 		size:       sz,
+		count:      sz * sz,
 		currPlayer: Cross, // First player is Cross
 	}
 
@@ -91,6 +98,7 @@ func (g Game) copyGame() (ng Game) {
 	ng = Game{
 		board:      make([][]byte, g.size),
 		size:       g.size,
+		count:      g.count,
 		currPlayer: g.currPlayer,
 	}
 
@@ -129,6 +137,7 @@ func (g *Game) Play(x, y int, player byte) (done bool, winner byte, err error) {
 	isDone, winner := g.isDone()
 
 	g.updateTurn()
+	g.count -= 1
 
 	return isDone, winner, nil
 }
@@ -143,24 +152,39 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 		return false, Empty, errors.New("not player's turn")
 	}
 
-	lim := g.size * g.size * 3
+	// A value greater than the maximum value possible for a game.
+	lim := g.size * g.size * 10
 
-	// Try to generate all the fucking tree!
-	_, i, j := alphaBetaPruning(*g, g.size, -lim, lim, player)
+	// Serial alpha-beta pruning
+	m := alphaBetaPruningSerial(*g, g.size*g.size, -lim, lim, -1, -1, player)
 
-	return g.Play(i, j, player)
+	//res := make(chan move)
+	//prune := make(chan struct{})
+	//defer close(prune)
+
+	//go alphaBetaPruning(*g, g.size*g.size, -lim, lim, -1, -1, player, res, prune)
+
+	//// Wait for result.
+	//m := <-res
+
+	return g.Play(m.i, m.j, player)
 }
 
 // Serial implementation of Alpha-Beta Pruning algorithm.
 // TODO: Try not to copy the entire game structure
-func alphaBetaPruning(g Game, depth int, alpha, beta int, player byte) (v, x, y int) {
-	// Check for depth limit
-	if done, _ := g.isDone(); depth == 0 || done {
-		return g.outcome(player), -1, -1
+func alphaBetaPruningSerial(g Game, depth int, alpha, beta int, x, y int, player byte) move {
+	// Check for depth limit or if game is over
+	if depth == 0 {
+		return move{g.outcome(player), x, y}
+	}
+	if done, _ := g.isDone(); done {
+		return move{g.outcome(player), x, y}
 	}
 
 	// Check for whose turn it is
 	if curr := g.currPlayer; curr == player {
+		p := move{alpha, x, y}
+
 		for i, l := range g.board {
 			for j, e := range l {
 				// Check for possible move
@@ -172,19 +196,24 @@ func alphaBetaPruning(g Game, depth int, alpha, beta int, player byte) (v, x, y 
 				ng := g.copyGame()
 				ng.Play(i, j, player)
 
-				// Game is over
-				val, _, _ := alphaBetaPruning(ng, depth-1, alpha, beta, player)
+				m := alphaBetaPruningSerial(ng, depth-1, alpha, beta, i, j, player)
+				m.i = i
+				m.j = j
 
-				alpha, x, y = max(alpha, x, y, val, i, j)
+				// Update alpha
+				p = max(p, m)
+				alpha = p.value
 
-				// beta cut-off
+				// Beta cut-off
 				if beta <= alpha {
-					return alpha, i, j
+					return m
 				}
 			}
 		}
-		return alpha, x, y
+		return p
 	} else {
+		p := move{beta, x, y}
+
 		for i, l := range g.board {
 			for j, e := range l {
 				// Check for possible move
@@ -196,18 +225,21 @@ func alphaBetaPruning(g Game, depth int, alpha, beta int, player byte) (v, x, y 
 				ng := g.copyGame()
 				ng.Play(i, j, curr)
 
-				// Game is over
-				val, _, _ := alphaBetaPruning(ng, depth-1, alpha, beta, player)
+				m := alphaBetaPruningSerial(ng, depth-1, alpha, beta, i, j, player)
+				m.i = i
+				m.j = j
 
-				beta, x, y = min(beta, x, y, val, i, j)
+				// Update beta
+				p = min(p, m)
+				beta = p.value
 
-				// alpha cut-off
+				// Alpha cut-off
 				if beta <= alpha {
-					return beta, i, j
+					return m
 				}
 			}
 		}
-		return beta, x, y
+		return p
 	}
 }
 
