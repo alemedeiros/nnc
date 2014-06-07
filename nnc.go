@@ -13,7 +13,6 @@ package nnc
 
 import (
 	"errors"
-	"sync"
 )
 
 // Empty is an unplayed square;
@@ -36,11 +35,6 @@ type Game struct {
 // Structure to save the move and its value.
 type move struct {
 	value, i, j int
-}
-
-type bound struct {
-	val  int
-	lock *sync.Mutex
 }
 
 // CurrentPlayer method returns the player that should play.
@@ -163,21 +157,16 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 	// A value greater than the maximum value possible for a game.
 	lim := g.size * g.size * 10
 
-	a := bound{-lim, &sync.Mutex{}}
-	b := bound{lim, &sync.Mutex{}}
-	m := alphaBetaPruning(*g, g.size*g.size, &a, &b, -1, -1, player)
+	a := -lim
+	b := lim
+	ch := make(chan move)
+
+	go alphaBetaPruning(*g, g.size, &a, &b, -1, -1, player, ch)
+
+	m := <-ch
 
 	// Serial alpha-beta pruning
 	//m := alphaBetaPruningSerial(*g, g.size*g.size, -lim, lim, -1, -1, player)
-
-	//res := make(chan move)
-	//prune := make(chan struct{})
-	//defer close(prune)
-
-	//go alphaBetaPruning(*g, g.size*g.size, -lim, lim, -1, -1, player, res, prune)
-
-	//// Wait for result.
-	//m := <-res
 
 	return g.Play(m.i, m.j, player)
 }
@@ -257,21 +246,24 @@ func alphaBetaPruningSerial(g Game, depth int, alpha, beta int, x, y int, player
 
 // Parallel implementation of Alpha-Beta Pruning algorithm.
 // TODO: Try not to copy the entire game structure
-func alphaBetaPruning(g Game, depth int, alpha, beta *bound, x, y int, player byte) move {
+func alphaBetaPruning(g Game, depth int, alpha, beta *int, x, y int, player byte, ch chan<- move) {
 	// Check for depth limit or if game is over
 	if depth == 0 {
-		return move{g.outcome(player), x, y}
+		ch <- move{g.outcome(player), x, y}
 	}
 	if done, _ := g.isDone(); done {
-		return move{g.outcome(player), x, y}
+		ch <- move{g.outcome(player), x, y}
 	}
 
-	cAlpha := bound{alpha.val, &sync.Mutex{}}
-	cBeta := bound{beta.val, &sync.Mutex{}}
+	myCh := make(chan move, g.size)
+
+	cAlpha := *alpha
+	cBeta := *beta
+	count := 0
 
 	// Check for whose turn it is
 	if curr := g.currPlayer; curr == player {
-		p := move{cAlpha.val, x, y}
+		p := move{cAlpha, x, y}
 
 		for i, l := range g.board {
 			for j, e := range l {
@@ -284,30 +276,70 @@ func alphaBetaPruning(g Game, depth int, alpha, beta *bound, x, y int, player by
 				ng := g.copyGame()
 				ng.Play(i, j, player)
 
-				m := alphaBetaPruning(ng, depth-1, &cAlpha, &cBeta, i, j, player)
-				m.i = i
-				m.j = j
+				go alphaBetaPruning(ng, depth-1, &cAlpha, &cBeta, i, j, player, myCh)
+				count++
 
-				// Update alpha
-				p = max(p, m)
-				if cAlpha.val < p.value {
-					cAlpha.lock.Lock()
-					// Check again
-					if cAlpha.val < p.value {
-						cAlpha.val = p.value
+				select {
+				case m := <-myCh:
+					count--
+
+					// Update alpha
+					p = max(p, m)
+					if x != -1 && y != -1 {
+						p.i = x
+						p.j = y
 					}
-					cAlpha.lock.Unlock()
+
+					if cAlpha < p.value {
+						cAlpha = p.value
+					}
+				default:
 				}
 
+				// parent cut-off
+				if *beta <= *alpha {
+					cBeta = *beta
+					cAlpha = *alpha
+					return
+				}
 				// Beta cut-off
-				if cBeta.val <= cAlpha.val {
-					return p
+				if cBeta <= cAlpha {
+					ch <- p
+					return
 				}
 			}
 		}
-		return p
+
+		for count > 0 {
+			m := <-myCh
+			count--
+
+			// Update alpha
+			p = max(p, m)
+			if x != -1 && y != -1 {
+				p.i = x
+				p.j = y
+			}
+			if cAlpha < p.value {
+				cAlpha = p.value
+			}
+
+			// Parent cut-off
+			if *beta <= *alpha {
+				cBeta = *beta
+				cAlpha = *alpha
+				return
+			}
+
+			// Beta cut-off
+			if cBeta <= cAlpha {
+				ch <- p
+				return
+			}
+		}
+		ch <- p
 	} else {
-		p := move{cBeta.val, x, y}
+		p := move{cBeta, x, y}
 
 		for i, l := range g.board {
 			for j, e := range l {
@@ -320,28 +352,65 @@ func alphaBetaPruning(g Game, depth int, alpha, beta *bound, x, y int, player by
 				ng := g.copyGame()
 				ng.Play(i, j, curr)
 
-				m := alphaBetaPruning(ng, depth-1, &cAlpha, &cBeta, i, j, player)
-				m.i = i
-				m.j = j
+				go alphaBetaPruning(ng, depth-1, &cAlpha, &cBeta, i, j, player, myCh)
+				count++
 
-				// Update beta
-				p = min(p, m)
-				if cBeta.val > p.value {
-					cBeta.lock.Lock()
-					// Check again
-					if cBeta.val > p.value {
-						cBeta.val = p.value
+				select {
+				case m := <-myCh:
+					count--
+
+					// Update beta
+					p = min(p, m)
+					if x != -1 && y != -1 {
+						p.i = x
+						p.j = y
 					}
-					cBeta.lock.Unlock()
+					if cBeta > p.value {
+						cBeta = p.value
+					}
+				default:
 				}
 
+				// Parent cut-off
+				if *beta <= *alpha {
+					cBeta = *beta
+					cAlpha = *alpha
+					return
+				}
 				// Alpha cut-off
-				if cBeta.val <= cAlpha.val {
-					return p
+				if cBeta <= cAlpha {
+					ch <- p
+					return
 				}
 			}
 		}
-		return p
+		for count > 0 {
+			m := <-myCh
+			count--
+
+			// Update alpha
+			p = min(p, m)
+			if x != -1 && y != -1 {
+				p.i = x
+				p.j = y
+			}
+			if cBeta < p.value {
+				cBeta = p.value
+			}
+
+			// Parent cut-off
+			if *beta <= *alpha {
+				cBeta = *beta
+				cAlpha = *alpha
+				return
+			}
+			// Alpha cut-off
+			if cBeta <= cAlpha {
+				ch <- p
+				return
+			}
+		}
+		ch <- p
 	}
 }
 
