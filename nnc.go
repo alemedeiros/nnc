@@ -11,7 +11,10 @@ To win, you have to fill a line, column or diagonal with your symbol.
 // Package nnc implements a n-sized noughts and crosses game.
 package nnc
 
-import "errors"
+import (
+	"errors"
+	"sync"
+)
 
 // Empty is an unplayed square;
 // Cross is a 'X';
@@ -33,6 +36,11 @@ type Game struct {
 // Structure to save the move and its value.
 type move struct {
 	value, i, j int
+}
+
+type bound struct {
+	val  int
+	lock *sync.Mutex
 }
 
 // CurrentPlayer method returns the player that should play.
@@ -155,8 +163,12 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 	// A value greater than the maximum value possible for a game.
 	lim := g.size * g.size * 10
 
+	a := bound{-lim, &sync.Mutex{}}
+	b := bound{lim, &sync.Mutex{}}
+	m := alphaBetaPruning(*g, g.size*g.size, &a, &b, -1, -1, player)
+
 	// Serial alpha-beta pruning
-	m := alphaBetaPruningSerial(*g, g.size*g.size, -lim, lim, -1, -1, player)
+	//m := alphaBetaPruningSerial(*g, g.size*g.size, -lim, lim, -1, -1, player)
 
 	//res := make(chan move)
 	//prune := make(chan struct{})
@@ -236,6 +248,96 @@ func alphaBetaPruningSerial(g Game, depth int, alpha, beta int, x, y int, player
 				// Alpha cut-off
 				if beta <= alpha {
 					return m
+				}
+			}
+		}
+		return p
+	}
+}
+
+// Parallel implementation of Alpha-Beta Pruning algorithm.
+// TODO: Try not to copy the entire game structure
+func alphaBetaPruning(g Game, depth int, alpha, beta *bound, x, y int, player byte) move {
+	// Check for depth limit or if game is over
+	if depth == 0 {
+		return move{g.outcome(player), x, y}
+	}
+	if done, _ := g.isDone(); done {
+		return move{g.outcome(player), x, y}
+	}
+
+	cAlpha := bound{alpha.val, &sync.Mutex{}}
+	cBeta := bound{beta.val, &sync.Mutex{}}
+
+	// Check for whose turn it is
+	if curr := g.currPlayer; curr == player {
+		p := move{cAlpha.val, x, y}
+
+		for i, l := range g.board {
+			for j, e := range l {
+				// Check for possible move
+				if e != Empty {
+					continue
+				}
+
+				// Generate updated game
+				ng := g.copyGame()
+				ng.Play(i, j, player)
+
+				m := alphaBetaPruning(ng, depth-1, &cAlpha, &cBeta, i, j, player)
+				m.i = i
+				m.j = j
+
+				// Update alpha
+				p = max(p, m)
+				if cAlpha.val < p.value {
+					cAlpha.lock.Lock()
+					// Check again
+					if cAlpha.val < p.value {
+						cAlpha.val = p.value
+					}
+					cAlpha.lock.Unlock()
+				}
+
+				// Beta cut-off
+				if cBeta.val <= cAlpha.val {
+					return p
+				}
+			}
+		}
+		return p
+	} else {
+		p := move{cBeta.val, x, y}
+
+		for i, l := range g.board {
+			for j, e := range l {
+				// Check for possible move
+				if e != Empty {
+					continue
+				}
+
+				// Generate updated game
+				ng := g.copyGame()
+				ng.Play(i, j, curr)
+
+				m := alphaBetaPruning(ng, depth-1, &cAlpha, &cBeta, i, j, player)
+				m.i = i
+				m.j = j
+
+				// Update beta
+				p = min(p, m)
+				if cBeta.val > p.value {
+					cBeta.lock.Lock()
+					// Check again
+					if cBeta.val > p.value {
+						cBeta.val = p.value
+					}
+					cBeta.lock.Unlock()
+				}
+
+				// Alpha cut-off
+				if cBeta.val <= cAlpha.val {
+					return p
 				}
 			}
 		}
