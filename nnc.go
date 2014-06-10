@@ -13,6 +13,8 @@ package nnc
 
 import (
 	"errors"
+	"runtime"
+	"time"
 )
 
 // Empty is an unplayed square;
@@ -23,6 +25,8 @@ const (
 	Cross  byte = 'X'
 	Nought byte = 'O'
 )
+
+var ticker = time.NewTicker(time.Millisecond * 25)
 
 // A Game is a game board, use New function to initialize a Game.
 type Game struct {
@@ -157,6 +161,7 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 	// A value greater than the maximum value possible for a game.
 	lim := g.size * g.size * 10
 
+	///*
 	a := -lim
 	b := lim
 	ch := make(chan move)
@@ -164,9 +169,10 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 	go alphaBetaPruning(*g, g.size, &a, &b, -1, -1, player, ch)
 
 	m := <-ch
+	//*/
 
 	// Serial alpha-beta pruning
-	//m := alphaBetaPruningSerial(*g, g.size*g.size, -lim, lim, -1, -1, player)
+	//m := alphaBetaPruningSerial(*g, g.size, -lim, lim, -1, -1, player)
 
 	return g.Play(m.i, m.j, player)
 }
@@ -293,7 +299,8 @@ func alphaBetaPruning(g Game, depth int, alpha, beta *int, x, y int, player byte
 					if cAlpha < p.value {
 						cAlpha = p.value
 					}
-				default:
+				case <-ticker.C:
+					runtime.Gosched()
 				}
 
 				// parent cut-off
@@ -368,7 +375,8 @@ func alphaBetaPruning(g Game, depth int, alpha, beta *int, x, y int, player byte
 					if cBeta > p.value {
 						cBeta = p.value
 					}
-				default:
+				case <-ticker.C:
+					runtime.Gosched()
 				}
 
 				// Parent cut-off

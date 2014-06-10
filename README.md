@@ -4,4 +4,4 @@ A n-sized noughts and crosses game library.
 
 ##TODO
 
-* Implement AI using goroutines for better performance
+* Improve parallel implementation
