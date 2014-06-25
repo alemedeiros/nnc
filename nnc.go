@@ -159,21 +159,35 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 	lim := g.size * g.size * 10
 	depth := g.size
 
-	///*
 	// Configure runtime max processors to use all processors.
 	runtime.GOMAXPROCS(runtime.NumCPU())
 
 	// Alpha-beta pruning
 	m := alphaBetaPruning(*g, depth, -lim, lim, -1, -1, player)
-	//*/
 
-	/*
-		// Configure runtime max processors to use all processors.
-		runtime.GOMAXPROCS(1)
+	return g.Play(m.i, m.j, player)
+}
 
-		// Serial alpha-beta pruning
-		//m := alphaBetaPruningSerial(*g, depth, -lim, lim, 0, -1, player)
-	  //*/
+// PlayAISerial method checks if is the given player's turn, if so, it makes a
+// move as that player. (Calling serial internal functions instead of parallel
+// ones)
+//
+// Return true and winner (Empty means draw) if the move ended the game.
+func (g *Game) PlayAISerial(player byte) (done bool, winner byte, err error) {
+	// Validation check
+	if g.currPlayer != player {
+		return false, Empty, errors.New("not player's turn")
+	}
+
+	// A value greater than the maximum value possible for a game.
+	lim := g.size * g.size * 10
+	depth := g.size
+
+	// Configure runtime max processors to use only one processor.
+	runtime.GOMAXPROCS(1)
+
+	// Alpha-beta pruning
+	m := alphaBetaPruningSerial(*g, depth, -lim, lim, 0, -1, player)
 
 	return g.Play(m.i, m.j, player)
 }
