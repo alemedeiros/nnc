@@ -160,19 +160,23 @@ func (g *Game) PlayAI(player byte) (done bool, winner byte, err error) {
 
 	// A value greater than the maximum value possible for a game.
 	lim := g.size * g.size * 10
+	depth := g.size
 
 	///*
-	a := -lim
-	b := lim
-	ch := make(chan move)
+	// Configure runtime max processors to use all processors.
+	runtime.GOMAXPROCS(runtime.NumCPU())
 
-	go alphaBetaPruning(*g, g.size, &a, &b, -1, -1, player, ch)
-
-	m := <-ch
+	// Alpha-beta pruning
+	m := alphaBetaPruning(*g, depth, -lim, lim, -1, -1, player)
 	//*/
 
-	// Serial alpha-beta pruning
-	//m := alphaBetaPruningSerial(*g, g.size, -lim, lim, -1, -1, player)
+	/*
+		// Configure runtime max processors to use all processors.
+		runtime.GOMAXPROCS(1)
+
+		// Serial alpha-beta pruning
+		//m := alphaBetaPruningSerial(*g, depth, -lim, lim, 0, -1, player)
+	  //*/
 
 	return g.Play(m.i, m.j, player)
 }
@@ -194,6 +198,8 @@ func alphaBetaPruningSerial(g Game, depth int, alpha, beta int, x, y int, player
 
 		for i, l := range g.board {
 			for j, e := range l {
+				var m move
+
 				// Check for possible move
 				if e != Empty {
 					continue
@@ -203,7 +209,7 @@ func alphaBetaPruningSerial(g Game, depth int, alpha, beta int, x, y int, player
 				ng := g.copyGame()
 				ng.Play(i, j, player)
 
-				m := alphaBetaPruningSerial(ng, depth-1, alpha, beta, i, j, player)
+				m = alphaBetaPruningSerial(ng, depth-1, alpha, beta, i, j, player)
 				m.i = i
 				m.j = j
 
@@ -223,6 +229,8 @@ func alphaBetaPruningSerial(g Game, depth int, alpha, beta int, x, y int, player
 
 		for i, l := range g.board {
 			for j, e := range l {
+				var m move
+
 				// Check for possible move
 				if e != Empty {
 					continue
@@ -232,7 +240,7 @@ func alphaBetaPruningSerial(g Game, depth int, alpha, beta int, x, y int, player
 				ng := g.copyGame()
 				ng.Play(i, j, curr)
 
-				m := alphaBetaPruningSerial(ng, depth-1, alpha, beta, i, j, player)
+				m = alphaBetaPruningSerial(ng, depth-1, alpha, beta, i, j, player)
 				m.i = i
 				m.j = j
 
@@ -250,176 +258,143 @@ func alphaBetaPruningSerial(g Game, depth int, alpha, beta int, x, y int, player
 	}
 }
 
+type work struct {
+	g    Game
+	a, b int
+	i, j int
+}
+
 // Parallel implementation of Alpha-Beta Pruning algorithm.
 // TODO: Try not to copy the entire game structure
-func alphaBetaPruning(g Game, depth int, alpha, beta *int, x, y int, player byte, ch chan<- move) {
+func alphaBetaPruning(g Game, depth int, alpha, beta int, x, y int, player byte) move {
 	// Check for depth limit or if game is over
 	if depth == 0 {
-		ch <- move{g.outcome(player), x, y}
+		return move{g.outcome(player), x, y}
 	}
 	if done, _ := g.isDone(); done {
-		ch <- move{g.outcome(player), x, y}
+		return move{g.outcome(player), x, y}
 	}
 
-	myCh := make(chan move, g.size)
+	var m, p move
 
-	cAlpha := *alpha
-	cBeta := *beta
+	// Find first possible move.
+firstmove:
+	for i, l := range g.board {
+		for j, e := range l {
+
+			// Check for possible move
+			if e != Empty {
+				continue
+			}
+
+			// Generate updated game
+			ng := g.copyGame()
+			ng.Play(i, j, g.currPlayer)
+
+			m = alphaBetaPruning(ng, depth-1, alpha, beta, i, j, player)
+			m.i = i
+			m.j = j
+
+			// Update alpha/beta
+			if g.currPlayer == player {
+				alpha = m.value
+			} else {
+				beta = m.value
+			}
+
+			break firstmove
+		}
+	}
+
+	// Initialize goroutines
+	workCh := make(chan work, runtime.NumCPU())
+	resCh := make(chan move, runtime.NumCPU())
+
+	for i := 0; i < runtime.NumCPU(); i++ {
+		go func() {
+			// Receive work
+			for w := range workCh {
+				// Calculate
+				nm := alphaBetaPruningSerial(w.g, depth-1, w.a, w.b, w.i, w.j, player)
+				nm.i = w.i
+				nm.j = w.j
+
+				// Return result
+				resCh <- nm
+			}
+		}()
+	}
+
 	count := 0
 
-	// Check for whose turn it is
-	if curr := g.currPlayer; curr == player {
-		p := move{cAlpha, x, y}
+	// Distribute work
+genwork:
+	for i := 0; i < g.size; i++ {
+		for j := 0; j < g.size; j++ {
+			// Check for possible move
+			if g.board[i][j] != Empty {
+				continue
+			}
 
-		for i, l := range g.board {
-			for j, e := range l {
-				// Check for possible move
-				if e != Empty {
-					continue
-				}
+			// Generate updated game
+			ng := g.copyGame()
+			ng.Play(i, j, g.currPlayer)
 
-				// Generate updated game
-				ng := g.copyGame()
-				ng.Play(i, j, player)
+			// Send work
+			workCh <- work{ng, alpha, beta, i, j}
+			count++
 
-				go alphaBetaPruning(ng, depth-1, &cAlpha, &cBeta, i, j, player, myCh)
-				count++
-
+			// Get a result or generate another work
+			if count == runtime.NumCPU() {
+				// Must wait for a result
+				p = <-resCh
+				count--
+			} else {
+				// Check if there is any result available
 				select {
-				case m := <-myCh:
-					count--
-
-					// Update alpha
-					p = max(p, m)
-					if x != -1 && y != -1 {
-						p.i = x
-						p.j = y
-					}
-
-					if cAlpha < p.value {
-						cAlpha = p.value
-					}
-				case <-ticker.C:
-					runtime.Gosched()
-				}
-
-				// parent cut-off
-				if *beta <= *alpha {
-					cBeta = *beta
-					cAlpha = *alpha
-					return
-				}
-				// Beta cut-off
-				if cBeta <= cAlpha {
-					ch <- p
-					return
-				}
-			}
-		}
-
-		for count > 0 {
-			m := <-myCh
-			count--
-
-			// Update alpha
-			p = max(p, m)
-			if x != -1 && y != -1 {
-				p.i = x
-				p.j = y
-			}
-			if cAlpha < p.value {
-				cAlpha = p.value
-			}
-
-			// Parent cut-off
-			if *beta <= *alpha {
-				cBeta = *beta
-				cAlpha = *alpha
-				return
-			}
-
-			// Beta cut-off
-			if cBeta <= cAlpha {
-				ch <- p
-				return
-			}
-		}
-		ch <- p
-	} else {
-		p := move{cBeta, x, y}
-
-		for i, l := range g.board {
-			for j, e := range l {
-				// Check for possible move
-				if e != Empty {
+				default:
 					continue
-				}
-
-				// Generate updated game
-				ng := g.copyGame()
-				ng.Play(i, j, curr)
-
-				go alphaBetaPruning(ng, depth-1, &cAlpha, &cBeta, i, j, player, myCh)
-				count++
-
-				select {
-				case m := <-myCh:
+				case p = <-resCh:
 					count--
+				}
+			}
 
-					// Update beta
-					p = min(p, m)
-					if x != -1 && y != -1 {
-						p.i = x
-						p.j = y
-					}
-					if cBeta > p.value {
-						cBeta = p.value
-					}
-				case <-ticker.C:
-					runtime.Gosched()
-				}
+			// Evaluate the result received (move p)
+			if g.currPlayer == player {
+				m = max(m, p)
+				alpha = m.value
+			} else {
+				m = min(m, p)
+				beta = m.value
+			}
 
-				// Parent cut-off
-				if *beta <= *alpha {
-					cBeta = *beta
-					cAlpha = *alpha
-					return
-				}
-				// Alpha cut-off
-				if cBeta <= cAlpha {
-					ch <- p
-					return
-				}
+			// Pruned
+			if beta <= alpha {
+				break genwork
 			}
 		}
-		for count > 0 {
-			m := <-myCh
-			count--
-
-			// Update alpha
-			p = min(p, m)
-			if x != -1 && y != -1 {
-				p.i = x
-				p.j = y
-			}
-			if cBeta < p.value {
-				cBeta = p.value
-			}
-
-			// Parent cut-off
-			if *beta <= *alpha {
-				cBeta = *beta
-				cAlpha = *alpha
-				return
-			}
-			// Alpha cut-off
-			if cBeta <= cAlpha {
-				ch <- p
-				return
-			}
-		}
-		ch <- p
 	}
+
+	// Close work channel and evaluate remaining results
+	close(workCh)
+	for count > 0 {
+		p = <-resCh
+		count--
+
+		if beta <= alpha {
+			continue
+		}
+
+		if g.currPlayer == player {
+			m = max(m, p)
+			alpha = m.value
+		} else {
+			m = min(m, p)
+			beta = m.value
+		}
+	}
+
+	return m
 }
 
 // updateTurn method updates whose turn it is.
