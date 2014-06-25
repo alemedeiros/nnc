@@ -14,7 +14,6 @@ package nnc
 import (
 	"errors"
 	"runtime"
-	"time"
 )
 
 // Empty is an unplayed square;
@@ -25,8 +24,6 @@ const (
 	Cross  byte = 'X'
 	Nought byte = 'O'
 )
-
-var ticker = time.NewTicker(time.Millisecond * 25)
 
 // A Game is a game board, use New function to initialize a Game.
 type Game struct {
